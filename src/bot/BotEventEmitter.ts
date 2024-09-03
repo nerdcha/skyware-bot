@@ -34,6 +34,11 @@ export const EventStrategy = {
 	 * events as soon as they are emitted.
 	 */
 	Firehose: "firehose",
+	/**
+	 * Similar to `Firehose`, but the bot receives an event for every new message instead of
+	 * only those which directly interact with the bot.
+	 */
+	Relay: "relay",
 };
 export type EventStrategy = typeof EventStrategy[keyof typeof EventStrategy];
 
@@ -98,7 +103,7 @@ export class BotEventEmitter extends EventEmitter {
 		this.strategy = options.strategy ?? EventStrategy.Polling;
 		this.pollingInterval = options.pollingInterval ?? 5;
 		this.lastSeen = options.processFrom ?? new Date();
-		if (this.strategy === EventStrategy.Firehose) {
+		if (this.strategy === EventStrategy.Firehose || this.strategy === EventStrategy.Relay) {
 			import("@skyware/firehose").then(({ Firehose }) => {
 				this.firehose = new Firehose(
 					options.relayUri ?? "wss://bsky.network",
@@ -119,8 +124,9 @@ export class BotEventEmitter extends EventEmitter {
 	/** Start emitting events. */
 	start() {
 		if (this.emitting) return;
-		if (this.strategy === EventStrategy.Firehose) this.startFirehose();
-		else this.startPolling();
+		if (this.strategy === EventStrategy.Firehose || this.strategy === EventStrategy.Relay) {
+			this.startFirehose();
+		} else this.startPolling();
 	}
 
 	/** Stop emitting events. */
@@ -174,6 +180,11 @@ export class BotEventEmitter extends EventEmitter {
 						) {
 							const post = await this.bot.getPost(uri);
 							this.emit("mention", post);
+						}
+
+						if (this.strategy === EventStrategy.Relay) {
+							const post = await this.bot.getPost(uri);
+							this.emit("firehoseMessage", post);
 						}
 					} else if (AppBskyFeedRepost.isRecord(op.record)) {
 						// Repost
